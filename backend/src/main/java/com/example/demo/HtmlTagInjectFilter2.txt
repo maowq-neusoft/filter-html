@@ -1,0 +1,88 @@
+package com.example.demo;
+import javax.servlet.*;
+import javax.servlet.http.*;
+import java.io.*;
+
+public class HtmlTagInjectFilter implements Filter {
+
+    @Override
+    public void init(FilterConfig filterConfig) throws ServletException {
+
+    }
+
+    @Override
+    public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
+            throws IOException, ServletException {
+
+        HttpServletRequest request = (HttpServletRequest) req;
+        HttpServletResponse response = (HttpServletResponse) res;
+
+        ByteArrayResponseWrapper wrappedResponse = new ByteArrayResponseWrapper(response);
+
+        chain.doFilter(request, wrappedResponse);
+
+        byte[] contentBytes = wrappedResponse.getBytes();
+
+        String contentType = response.getContentType();
+        if (contentType != null && contentType.contains("text/html")) {
+            String html = new String(contentBytes, response.getCharacterEncoding());
+            // 这里可以处理或注入
+            html = html.replace("</body>", "<!-- injected by Filter --></body>");
+            contentBytes = html.getBytes(response.getCharacterEncoding());
+            response.setContentLength(contentBytes.length);
+        }
+
+        ServletOutputStream out = response.getOutputStream();
+        out.write(contentBytes);
+        out.flush();
+    }
+
+    @Override
+    public void destroy() {
+
+    }
+}
+
+class ByteArrayResponseWrapper extends HttpServletResponseWrapper {
+
+    private ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+    private ServletOutputStream outStream;
+    private PrintWriter writer;
+    private HttpServletResponse original;
+
+    public ByteArrayResponseWrapper(HttpServletResponse response) {
+        super(response);
+        this.original = response;
+    }
+
+    @Override
+    public ServletOutputStream getOutputStream() {
+        if (outStream == null) {
+            outStream = new ServletOutputStream() {
+                @Override
+                public void write(int b) throws IOException {
+                    buffer.write(b);
+                }
+            };
+        }
+        return outStream;
+    }
+
+    @Override
+    public PrintWriter getWriter() throws IOException {
+        if (writer == null) {
+            writer = new PrintWriter(new OutputStreamWriter(buffer, original.getCharacterEncoding()));
+        }
+        return writer;
+    }
+
+    public byte[] getBytes() throws IOException {
+        if (writer != null) {
+            writer.flush();
+        }
+        if (outStream != null) {
+            outStream.flush();
+        }
+        return buffer.toByteArray();
+    }
+}

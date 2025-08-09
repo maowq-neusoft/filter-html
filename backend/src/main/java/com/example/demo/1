@@ -1,0 +1,99 @@
+package com.example.demo;
+import javax.servlet.*;
+import javax.servlet.http.*;
+import java.io.*;
+
+public class HtmlTagInjectFilter implements Filter {
+    @Override
+    public void init(FilterConfig filterConfig) {
+
+    }
+
+    @Override
+    public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
+            throws IOException, ServletException {
+
+        HttpServletRequest request = (HttpServletRequest) req;
+        HttpServletResponse response = (HttpServletResponse) res;
+
+        String uri = request.getRequestURI();
+
+        // 只处理以 .html 结尾的请求
+        if (uri != null && uri.endsWith(".html")) {
+            ByteArrayResponseWrapper wrappedResponse = new ByteArrayResponseWrapper(response);
+
+            chain.doFilter(request, wrappedResponse);
+
+            byte[] bytes = wrappedResponse.getBytes();
+
+            // 根据响应编码转换为字符串
+            String encoding = response.getCharacterEncoding();
+            if (encoding == null) {
+                encoding = "UTF-8";  // 默认编码
+            }
+
+            String html = new String(bytes, encoding);
+            System.out.println("[html]:"+html);
+            html = html.replace("</body>", "<!-- injected by filter -->\n</body>");
+            bytes = html.getBytes(encoding);
+
+            response.setContentLength(bytes.length);
+
+            ServletOutputStream out = response.getOutputStream();
+            out.write(bytes);
+            out.flush();
+        } else {
+            // 非 .html 请求，直接放行，不处理
+            chain.doFilter(request, response);
+        }
+    }
+
+    @Override
+    public void destroy() {
+
+    }
+}
+
+class ByteArrayResponseWrapper extends HttpServletResponseWrapper {
+    private ByteArrayOutputStream buffer;
+    private ServletOutputStream outStream;
+    private PrintWriter writer;
+    private HttpServletResponse original;
+
+    public ByteArrayResponseWrapper(HttpServletResponse response) {
+        super(response);
+        original = response;
+        buffer = new ByteArrayOutputStream();
+    }
+
+    @Override
+    public ServletOutputStream getOutputStream() {
+        if (outStream == null) {
+            outStream = new ServletOutputStream() {
+                @Override
+                public void write(int b) {
+                    buffer.write(b);
+                }
+            };
+        }
+        return outStream;
+    }
+
+    @Override
+    public PrintWriter getWriter() throws IOException {
+        if (writer == null) {
+            writer = new PrintWriter(new OutputStreamWriter(buffer, original.getCharacterEncoding()));
+        }
+        return writer;
+    }
+
+    public byte[] getBytes() throws IOException {
+        if (writer != null) {
+            writer.flush();
+        }
+        if (outStream != null) {
+            outStream.flush();
+        }
+        return buffer.toByteArray();
+    }
+}
